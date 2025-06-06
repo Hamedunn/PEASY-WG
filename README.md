@@ -1,21 +1,27 @@
 # PEASY-WG
 
-**PEASY-WG** اسکریپتی برای نصب خودکار **WireGuard VPN** روی اوبونتو 22.04 با پنل تحت وب برای مدیریت کلاینت‌ها و همگام‌سازی خودکار با GitHub.
+[English](#english) | [فارسی](#فارسی)
 
-## ویژگی‌ها
-- نصب خودکار WireGuard و پیش‌نیازها.
-- پیکربندی با DNSهای `10.202.10.10` و `10.202.10.11`.
-- تولید کانفیگ کلاینت با QR کد.
-- پنل تحت وب Flask برای مدیریت کلاینت‌ها.
-- همگام‌سازی روزانه با GitHub.
+---
 
-## پیش‌نیازها
-- اوبونتو 22.04
-- دسترسی root یا sudo
-- IP عمومی و اتصال اینترنت
+## English
 
-## نصب
-1. دانلود اسکریپت:
+**PEASY-WG** is an automated script for installing and configuring **WireGuard VPN** on Ubuntu 22.04, featuring a simple web panel for client management and daily GitHub repository sync.
+
+### Features
+- Automatic WireGuard and dependencies installation.
+- Server setup with DNS servers `10.202.10.10` and `10.202.10.11`.
+- Client config generation with QR code.
+- Flask-based web panel for client management.
+- Daily GitHub repository synchronization.
+
+### Prerequisites
+- Ubuntu 22.04
+- Root or sudo access
+- Public IP and internet connection
+
+### Installation
+1. Download the script:
 ```bash
 sudo apt update
 wget https://raw.githubusercontent.com/Hamedunn/PEASY-WG/main/setup.sh
