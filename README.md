@@ -1,28 +1,48 @@
 # PEASY-WG
 
-[English](#english) | [فارسی](#فارسی)
+A simple WireGuard VPN setup with a built-in web panel.  
+راه‌اندازی ساده‌ی وی‌پی‌ان WireGuard با پنل تحت‌وب داخلی.
 
 ---
 
-## English
+## ✨ Features | امکانات
 
-**PEASY-WG** is an automated script for installing and configuring **WireGuard VPN** on Ubuntu 22.04, featuring a simple web panel for client management and daily GitHub repository sync.
+- Automatic WireGuard and dependencies installation.  
+  نصب خودکار WireGuard و تمام پیش‌نیازها.
 
-### Features
-- Automatic WireGuard and dependencies installation.
-- Server setup with DNS servers `10.202.10.10` and `10.202.10.11`.
-- Client config generation with QR code.
-- Flask-based web panel for client management.
-- Daily GitHub repository synchronization.
+- Server setup with DNS servers `10.202.10.10` and `10.202.10.11`.  
+  پیکربندی سرور با DNSهای `10.202.10.10` و `10.202.10.11`.
 
-### Prerequisites
-- Ubuntu 22.04
-- Root or sudo access
-- Public IP and internet connection
+- Client config generation with QR code.  
+  تولید فایل پیکربندی کلاینت به‌همراه QR کد.
 
-### Installation
-1. Download the script:
+- Flask-based web panel for client management.  
+  پنل تحت وب ساخته‌شده با Flask برای مدیریت کاربران.
+
+- Daily GitHub repository synchronization.  
+  هماهنگی روزانه با مخزن گیت‌هاب.
+
+---
+
+## 📋 Prerequisites | پیش‌نیازها
+
+- Ubuntu 22.04  
+  اوبونتو نسخه 22.04
+
+- Root or sudo access  
+  دسترسی روت یا sudo
+
+- Public IP and internet connection  
+  آی‌پی عمومی و اتصال به اینترنت
+
+---
+
+## ⚙️ Installation | نصب
+
+1. Download and run the setup script:  
+   اسکریپت نصب را دانلود و اجرا کنید:
 ```bash
 sudo apt update
 wget https://raw.githubusercontent.com/Hamedunn/PEASY-WG/main/setup.sh
 chmod +x setup.sh
+./setup.sh
