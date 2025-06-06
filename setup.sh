@@ -1,39 +1,55 @@
 #!/bin/bash
 
-# رنگ‌ها برای خروجی زیباتر
+# رنگ‌ها برای خروجی
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # بررسی دسترسی root
 if [[ $EUID -ne 0 ]]; then
-   echo -e "${RED}This script must be run as root${NC}" 
+   echo -e "${RED}Run as root${NC}"
    exit 1
 fi
 
-# دریافت IP عمومی سرور
-SERVER_IP=$(curl -s ifconfig.me)
+# دریافت IP سرور
+SERVER_IP=$(curl -s ifconfig.me || echo "YOUR_SERVER_IP")
 WG_PORT=51820
 DNS1="10.202.10.10"
 DNS2="10.202.10.11"
-REPO_URL="https://github.com/YOUR_GITHUB_USERNAME/wireguard-auto-setup.git" # جایگزین با آدرس مخزن شما
+REPO_URL="https://github.com/Hamedunn/PEASY-WG.git"
 
-echo -e "${GREEN}Starting WireGuard auto-setup...${NC}"
+echo -e "${GREEN}Starting optimized WireGuard setup...${NC}"
 
-# به‌روزرسانی سیستم
-apt update && apt upgrade -y
+# آزادسازی حافظه
+sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
 
-# نصب پیش‌نیازها
-apt install wireguard python3 python3-pip git qrencode -y
-pip3 install flask
+# ایجاد Swap (1 گیگابایت)
+if ! swapon --show | grep -q "/swapfile"; then
+    fallocate -l 1G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' | tee -a /etc/fstab
+fi
 
-# ایجاد کلیدهای WireGuard
+# غیرفعال کردن appstreamcli برای کاهش مصرف حافظه
+systemctl disable --now apt-appstream 2>/dev/null
+rm -rf /var/cache/appstream
+
+# به‌روزرسانی و نصب حداقل بسته‌ها
+apt update
+apt install -y wireguard python3 python3-pip git
+
+# نصب Flask با حداقل وابستگی‌ها
+pip3 install --no-cache-dir flask
+
+# تولید کلیدهای WireGuard
 umask 077
 mkdir -p /etc/wireguard
 wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey
 SERVER_PUB_KEY=$(cat /etc/wireguard/publickey)
 
-# ایجاد فایل پیکربندی WireGuard
+# پیکربندی WireGuard
 cat > /etc/wireguard/wg0.conf << EOF
 [Interface]
 PrivateKey = $(cat /etc/wireguard/privatekey)
@@ -51,16 +67,16 @@ sysctl -p
 systemctl enable wg-quick@wg0
 systemctl start wg-quick@wg0
 
-# باز کردن پورت WireGuard
+# تنظیم فایروال
 ufw allow $WG_PORT/udp
-ufw allow 5000/tcp # برای پنل تحت وب
+ufw allow 5000/tcp
 ufw --force enable
 
-# کلون کردن مخزن GitHub
+# کلون مخزن
 git clone $REPO_URL /opt/wireguard-auto-setup
 cd /opt/wireguard-auto-setup
 
-# ایجاد اسکریپت تولید کانفیگ کلاینت
+# اسکریپت تولید کانفیگ کلاینت (بدون QR کد برای صرفه‌جویی در حافظه)
 cat > /usr/local/bin/add-wireguard-client.sh << 'EOF'
 #!/bin/bash
 WG_CONFIG="/etc/wireguard/wg0.conf"
@@ -93,21 +109,18 @@ systemctl restart wg-quick@wg0
 
 echo "Client config created at $CLIENT_CONFIG:"
 cat $CLIENT_CONFIG
-qrencode -t ansiutf8 < $CLIENT_CONFIG
 EOF
 
-# جایگزینی IP سرور در اسکریپت
 sed -i "s/YOUR_SERVER_IP/$SERVER_IP/g" /usr/local/bin/add-wireguard-client.sh
 chmod +x /usr/local/bin/add-wireguard-client.sh
 
-# ایجاد پنل تحت وب
+# پنل تحت وب (بهینه‌شده)
 cat > /opt/wireguard-auto-setup/app.py << 'EOF'
 from flask import Flask, request, render_template_string, send_file
 import os
 import subprocess
 
 app = Flask(__name__)
-
 WG_CONFIG = "/etc/wireguard/wg0.conf"
 SERVER_PUB_KEY = open("/etc/wireguard/publickey").read().strip()
 SERVER_ENDPOINT = "SERVER_IP:51820"
@@ -116,29 +129,24 @@ DNS2 = "10.202.10.11"
 
 @app.route('/')
 def index():
+    clients = [f.replace('client-', '').replace('.conf', '') for f in os.listdir('/etc/wireguard') if f.startswith('client-') and f.endswith('.conf')]
     return render_template_string("""
-    <h1>WireGuard Management Panel</h1>
-    <h2>Add New Client</h2>
+    <h1>WireGuard Panel</h1>
+    <h3>Add Client</h3>
     <form method="post" action="/add_client">
-        <label>Client Name: <input type="text" name="client_name" required></label><br>
-        <input type="submit" value="Create Config">
+        <input type="text" name="client_name" required>
+        <input type="submit" value="Create">
     </form>
-    <h2>Existing Clients</h2>
-    <ul>
-    {% for client in clients %}
-        <li>{{ client }} <a href="/disable_client/{{ client }}">Disable</a></li>
-    {% endfor %}
-    </ul>
-    """, clients=get_clients())
+    <h3>Clients</h3>
+    <ul>{% for client in clients %}<li>{{ client }} <a href="/disable_client/{{ client }}">Disable</a></li>{% endfor %}</ul>
+    """, clients=clients)
 
 @app.route('/add_client', methods=['POST'])
 def add_client():
     client_name = request.form['client_name']
-    client_ip = f"10.202.10.{len(get_clients()) + 2}/32"
-    
+    client_ip = f"10.202.10.{len(os.listdir('/etc/wireguard')) + 2}/32"
     client_private_key = subprocess.check_output("wg genkey", shell=True).decode().strip()
     client_public_key = subprocess.check_output(f"echo '{client_private_key}' | wg pubkey", shell=True).decode().strip()
-    
     client_config = f"/etc/wireguard/client-{client_name}.conf"
     with open(client_config, 'w') as f:
         f.write(f"""[Interface]
@@ -152,12 +160,9 @@ Endpoint = {SERVER_ENDPOINT}
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 """)
-    
     with open(WG_CONFIG, 'a') as f:
         f.write(f"\n[Peer]\nPublicKey = {client_public_key}\nAllowedIPs = {client_ip}\n")
-    
     subprocess.run("systemctl restart wg-quick@wg0", shell=True)
-    
     return send_file(client_config, as_attachment=True)
 
 @app.route('/disable_client/<client_name>')
@@ -173,26 +178,36 @@ def disable_client(client_name):
                 skip = False
             if not skip:
                 f.write(line)
-    
     subprocess.run("systemctl restart wg-quick@wg0", shell=True)
     os.remove(f"/etc/wireguard/client-{client_name}.conf")
-    return "Client disabled and config removed."
-
-def get_clients():
-    clients = []
-    for f in os.listdir('/etc/wireguard'):
-        if f.startswith('client-') and f.endswith('.conf'):
-            clients.append(f.replace('client-', '').replace('.conf', ''))
-    return clients
+    return "Client disabled."
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, threaded=False)
 EOF
 
-# جایگزینی IP سرور در پنل
 sed -i "s/SERVER_IP/$SERVER_IP/g" /opt/wireguard-auto-setup/app.py
 
-# تنظیم همگام‌سازی خودکار با GitHub
+# سرویس پنل
+cat > /etc/systemd/system/wireguard-panel.service << EOF
+[Unit]
+Description=WireGuard Panel
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/wireguard-auto-setup/app.py
+WorkingDirectory=/opt/wireguard-auto-setup
+Restart=always
+MemoryLimit=100M
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable wireguard-panel
+systemctl start wireguard-panel
+
+# همگام‌سازی
 cat > /opt/wireguard-auto-setup/sync.sh << 'EOF'
 #!/bin/bash
 cd /opt/wireguard-auto-setup
@@ -200,32 +215,8 @@ git pull origin main
 systemctl restart wireguard-panel
 EOF
 chmod +x /opt/wireguard-auto-setup/sync.sh
-
-# تنظیم سرویس پنل تحت وب
-cat > /etc/systemd/system/wireguard-panel.service << EOF
-[Unit]
-Description=WireGuard Management Panel
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/python3 /opt/wireguard-auto-setup/app.py
-WorkingDirectory=/opt/wireguard-auto-setup
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# فعال‌سازی و راه‌اندازی پنل
-systemctl enable wireguard-panel
-systemctl start wireguard-panel
-
-# تنظیم کرون‌جاب برای همگام‌سازی روزانه
 (crontab -l 2>/dev/null; echo "0 2 * * * /opt/wireguard-auto-setup/sync.sh") | crontab -
 
-# نمایش نتیجه
-echo -e "${GREEN}Setup completed!${NC}"
-echo -e "WireGuard is running on port $WG_PORT"
-echo -e "Web panel is available at: ${GREEN}http://$SERVER_IP:5000${NC}"
-echo -e "To add a new client, run: ${GREEN}sudo /usr/local/bin/add-wireguard-client.sh${NC}"
-echo -e "Repository synced at /opt/wireguard-auto-setup. Daily sync scheduled."
+echo -e "${GREEN}Setup done!${NC}"
+echo -e "Web panel: ${GREEN}http://$SERVER_IP:5000${NC}"
+echo -e "Add client: ${GREEN}sudo /usr/local/bin/add-wireguard-client.sh${NC}"
