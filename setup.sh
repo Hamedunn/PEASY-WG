@@ -14,22 +14,30 @@ fi
 # دریافت IP سرور
 SERVER_IP=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
 REPO_URL="https://github.com/Hamedunn/PEASY-WG.git"
+INSTALL_DIR="/opt/peasy-wg"
 
 echo -e "${GREEN}Starting minimal PEASY-WG setup...${NC}"
 
-# به‌روزرسانی سیستم و نصب فقط پیش‌نیازها
+# نصب پیش‌نیازها
 apt update
-apt install -y python3 python3-pip git wireguard
+apt install -y python3 python3-pip python3-venv git wireguard
 
-# نصب Flask (پنل تحت وب)
-pip3 install --no-cache-dir flask
+# کلون پروژه
+rm -rf $INSTALL_DIR
+git clone $REPO_URL $INSTALL_DIR
 
-# تولید کلیدهای سرور WireGuard
+# ساخت محیط venv و نصب Flask
+python3 -m venv $INSTALL_DIR/venv
+source $INSTALL_DIR/venv/bin/activate
+pip install --no-cache-dir flask
+deactivate
+
+# تولید کلید سرور
 mkdir -p /etc/wireguard
 umask 077
 wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey
 
-# فایل اولیه wg0.conf (خالی از Peerها)
+# ساخت فایل اولیه کانفیگ wg
 cat > /etc/wireguard/wg0.conf <<EOF
 [Interface]
 PrivateKey = $(cat /etc/wireguard/privatekey)
@@ -43,23 +51,19 @@ EOF
 grep -qF "net.ipv4.ip_forward=1" /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
 sysctl -p
 
-# راه‌اندازی و فعال‌سازی سرویس WireGuard
+# راه‌اندازی WireGuard
 systemctl enable wg-quick@wg0
 systemctl start wg-quick@wg0
 
-# کلون مخزن و آماده‌سازی فایل‌های پنل
-git clone $REPO_URL /opt/peasy-wg
-chmod -R 700 /opt/peasy-wg
-
-# ساخت سرویس systemd برای اجرای دائمی پنل
+# ساخت سرویس پنل با اجرای Python داخل venv
 cat > /etc/systemd/system/peasy-wg-panel.service <<EOF
 [Unit]
 Description=PEASY-WG Web Panel
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /opt/peasy-wg/app.py
-WorkingDirectory=/opt/peasy-wg
+ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/app.py
+WorkingDirectory=$INSTALL_DIR
 Restart=always
 
 [Install]
@@ -68,8 +72,9 @@ EOF
 
 # فعال‌سازی پنل
 systemctl daemon-reexec
+systemctl daemon-reload
 systemctl enable peasy-wg-panel
-systemctl start peasy-wg-panel
+systemctl restart peasy-wg-panel
 
 # پیام نهایی
 echo -e "\n${GREEN}Setup completed successfully!${NC}"
